@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Cyber-style local LLM chat UI for LM Studio with streaming responses and live token stats.">
+<title>LM Studio · Chat</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;--panel:#141414;--panel2:#1a1a1a;
+  --line:#2a2a2a;--line2:#333;
+  --accent:#00e5ff;--accent-dim:#005f6b;
+  --green:#00ff88;--green-dim:#003320;
+  --yellow:#ffd600;--red:#ff3b3b;
+  --text:#e0e0e0;--text2:#888;--text3:#444;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+  --sans:Inter,'Segoe UI',Roboto,Arial,sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;overflow:hidden}
+
+.shell{display:grid;grid-template-rows:auto auto auto 1fr auto auto;height:100vh;max-width:900px;margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+
+/* topbar */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:48px;background:var(--panel);border-bottom:1px solid var(--line)}
+.tb-left{display:flex;align-items:center;gap:10px}
+.tb-dot{width:10px;height:10px;border-radius:50%;background:var(--text3);transition:.2s}
+.tb-dot.on{background:var(--green);box-shadow:0 0 10px var(--green)}
+.tb-dot.err{background:var(--red)}
+.tb-title{font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:.04em}
+.tb-badge{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);border:1px solid var(--line2);padding:2px 7px;border-radius:2px}
+.tb-status{font-size:11px;color:var(--text3);letter-spacing:.06em;transition:.2s}
+.tb-status.on{color:var(--green)}.tb-status.err{color:var(--red)}
+
+/* config */
+.config-row{display:flex;align-items:center;gap:0;height:40px;background:var(--panel2);border-bottom:1px solid var(--line);padding:0 20px}
+.cfg-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);white-space:nowrap;padding-right:10px}
+.cfg-sep{width:1px;height:20px;background:var(--line2);margin:0 16px;flex-shrink:0}
+.cfg-input{background:transparent;border:none;outline:none;color:var(--accent);font-family:var(--mono);font-size:12px;min-width:0;caret-color:var(--accent)}
+.cfg-input::placeholder{color:var(--text3)}
+.cfg-input.wide{flex:1}.cfg-input.narrow{flex:1;padding-left:10px}
+.connect-btn{background:none;border:1px solid var(--line2);border-radius:3px;padding:4px 14px;color:var(--text2);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:.15s;white-space:nowrap;margin-left:16px;flex-shrink:0}
+.connect-btn:hover{border-color:var(--accent);color:var(--accent)}
+.connect-btn.ok{border-color:var(--green);color:var(--green)}
+
+/* stats */
+.stats-row{display:flex;align-items:center;height:32px;background:var(--bg);border-bottom:1px solid var(--line);padding:0 20px;font-size:10px;letter-spacing:.06em;overflow:hidden;gap:0}
+.stat{display:flex;align-items:center;gap:6px;padding-right:20px;margin-right:20px;border-right:1px solid var(--line);color:var(--text3);white-space:nowrap}
+.stat:last-of-type{border-right:none}
+.stat-val{color:var(--accent);font-weight:500}
+.clear-btn{margin-left:auto;background:none;border:none;color:var(--text3);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:.15s;padding:4px 0;flex-shrink:0}
+.clear-btn:hover{color:var(--red)}
+
+/* messages */
+.messages{overflow-y:auto;display:flex;flex-direction:column;scroll-behavior:smooth}
+.messages::-webkit-scrollbar{width:3px}
+.messages::-webkit-scrollbar-thumb{background:var(--line2)}
+
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:60px 40px;color:var(--text3);font-size:11px;letter-spacing:.08em;text-align:center;min-height:200px}
+.empty-ascii{font-size:10px;line-height:1.3;color:var(--line2);margin-bottom:8px;white-space:pre}
+.empty-title{color:var(--text2);letter-spacing:.12em;text-transform:uppercase;font-size:11px}
+
+.msg-row{display:grid;grid-template-columns:60px 1fr;border-bottom:1px solid var(--line);animation:fadeIn .18s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg-row.user{background:#141414}
+.msg-row.ai{background:#0f0f0f}
+.msg-row.sys-msg{background:rgba(255,59,59,.04)}
+
+.msg-gutter{display:flex;flex-direction:column;align-items:center;padding:16px 0;border-right:1px solid var(--line);gap:6px}
+.msg-icon{width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:13px}
+.user .msg-icon{background:rgba(0,229,255,.1);border:1px solid var(--accent-dim)}
+.ai .msg-icon{background:rgba(0,255,136,.08);border:1px solid var(--green-dim)}
+.sys-msg .msg-icon{background:rgba(255,59,59,.1);border:1px solid #5a1a1a}
+.msg-role{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}
+
+.msg-body{padding:16px 20px;line-height:1.7;font-family:var(--sans);font-size:13.5px;color:var(--text);min-width:0;word-break:break-word}
+.msg-time{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:8px;letter-spacing:.06em}
+
+.msg-body code{font-family:var(--mono);font-size:12px;background:#1e1e1e;border:1px solid var(--line2);border-radius:3px;padding:1px 5px;color:var(--yellow)}
+.msg-body pre{background:#111;border:1px solid var(--line2);border-left:3px solid var(--accent-dim);border-radius:3px;padding:12px 14px;margin:10px 0;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6}
+.msg-body pre code{background:none;border:none;padding:0;color:var(--text)}
+.msg-body strong{color:var(--accent);font-weight:600}
+.msg-body em{color:var(--text2);font-style:italic}
+
+.typing-dots{display:inline-flex;gap:5px;align-items:center}
+.typing-dots span{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blinkd 1.2s infinite;opacity:.3}
+.typing-dots span:nth-child(2){animation-delay:.2s}
+.typing-dots span:nth-child(3){animation-delay:.4s}
+@keyframes blinkd{0%,80%,100%{opacity:.2}40%{opacity:1}}
+
+.cursor-block{display:inline-block;width:7px;height:13px;background:var(--green);animation:blinkc .9s infinite;vertical-align:middle;margin-left:2px}
+@keyframes blinkc{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+/* input */
+.input-zone{border-top:1px solid var(--line);background:var(--panel)}
+.input-row{display:flex;align-items:flex-end;gap:8px;padding:12px 16px 10px}
+.prompt-sym{color:var(--accent);font-size:14px;font-weight:700;padding-bottom:2px;flex-shrink:0;line-height:1;margin-bottom:2px}
+#msg-input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.65;resize:none;max-height:130px;caret-color:var(--accent);padding:0}
+#msg-input::placeholder{color:var(--text3)}
+#msg-input::-webkit-scrollbar{width:2px}
+#msg-input::-webkit-scrollbar-thumb{background:var(--line2)}
+.send-btn{width:34px;height:34px;background:var(--accent);border:none;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.15s}
+.send-btn:hover:not(:disabled){background:#00c8e0;transform:translateY(-1px)}
+.send-btn:disabled{opacity:.25;cursor:not-allowed}
+.send-btn svg{width:14px;height:14px;fill:#000}
+.input-hint{font-size:9px;color:var(--text3);text-align:center;padding:0 16px 10px;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <div class="tb-left">
+      <div class="tb-dot" id="dot"></div>
+      <div class="tb-title">LM Studio</div>
+      <div class="tb-badge">local inference</div>
+    </div>
+    <span class="tb-status" id="tb-status">offline</span>
+  </div>
+
+  <div class="config-row">
+    <span class="cfg-label">host</span>
+    <input class="cfg-input wide" id="base-url" value="http://localhost:1234" placeholder="http://localhost:1234">
+    <div class="cfg-sep"></div>
+    <span class="cfg-label">model</span>
+    <input class="cfg-input narrow" id="model-id" value="local-model" placeholder="model-id">
+    <button class="connect-btn" id="connect-btn" onclick="testConnection()">connect</button>
+  </div>
+
+  <div class="stats-row" id="stats-row">
+    <span class="stat" style="color:var(--text3)">awaiting first message</span>
+    <button class="clear-btn" onclick="clearChat()">[ clear ]</button>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="empty" id="empty-state">
+      <div class="empty-ascii">┌─────────────────┐
+│  ◈  LM STUDIO   │
+│  local chat ui  │
+└─────────────────┘</div>
+      <div class="empty-title">ready for inference</div>
+      <div style="margin-top:4px">connect your server and start chatting</div>
+    </div>
+  </div>
+
+  <div class="input-zone">
+    <div class="input-row">
+      <span class="prompt-sym">&gt;_</span>
+      <textarea id="msg-input" rows="1" placeholder="type a message…" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <div class="input-hint">enter → send &nbsp;·&nbsp; esc → stop generation &nbsp;·&nbsp; shift+enter → newline &nbsp;·&nbsp; ctrl+l → clear</div>
+  </div>
+
+</div>
+<script>
+let chatHistory=[];
+let isLoading=false;
+let abortController=null;
+const STORAGE_KEY='lmstudio-chat-config-v1';
+const DEFAULT_SYSTEM_PROMPT='You are a helpful AI assistant. Be concise and clear.';
+
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,130)+'px'}
+
+function saveConfig(){
+  const payload={
+    base:document.getElementById('base-url').value.trim(),
+    model:document.getElementById('model-id').value.trim()
+  };
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(payload));
+}
+
+function loadConfig(){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);
+    if(!raw)return;
+    const cfg=JSON.parse(raw);
+    if(cfg?.base)document.getElementById('base-url').value=cfg.base;
+    if(cfg?.model)document.getElementById('model-id').value=cfg.model;
+  }catch(_){}
+}
+
+function toggleSendButton(isGenerating){
+  const btn=document.getElementById('send-btn');
+  btn.disabled=false;
+  btn.title=isGenerating?'Stop':'Send';
+  btn.style.background=isGenerating?'var(--red)':'var(--accent)';
+  btn.innerHTML=isGenerating
+    ?'<svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/></svg>'
+    :'<svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>';
+}
+
+function handleKey(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();return}
+  if(e.key==='Escape'&&isLoading){e.preventDefault();abortController?.abort();return}
+  if(e.ctrlKey&&e.key==='l'){e.preventDefault();clearChat()}
+}
+
+function clearChat(){
+  chatHistory=[];
+  document.getElementById('messages').innerHTML=`<div class="empty" id="empty-state">
+    <div class="empty-ascii">┌─────────────────┐\n│  ◈  LM STUDIO   │\n│  local chat ui  │\n└─────────────────┘</div>
+    <div class="empty-title">chat cleared</div></div>`;
+  resetStats();
+}
+
+function setStatus(s){
+  const dot=document.getElementById('dot'),txt=document.getElementById('tb-status');
+  dot.className='tb-dot';txt.className='tb-status';
+  if(s==='on'){dot.classList.add('on');txt.classList.add('on');txt.textContent='online'}
+  else if(s==='err'){dot.classList.add('err');txt.classList.add('err');txt.textContent='error'}
+  else txt.textContent='offline';
+}
+
+async function testConnection(){
+  const btn=document.getElementById('connect-btn');
+  btn.textContent='testing…';btn.disabled=true;btn.classList.remove('ok');setStatus('');
+  try{
+    const base=document.getElementById('base-url').value.trim().replace(/\/$/,'');
+    const r=await fetch(`${base}/v1/models`,{method:'GET'});
+    if(r.ok){setStatus('on');btn.textContent='✓ connected';btn.classList.add('ok')}
+    else throw new Error(`HTTP ${r.status}`);
+  }catch(e){
+    setStatus('err');btn.textContent='retry';
+    addSysMsg(`connection failed → ${e?.message??'unknown error'}`);
+  }
+  btn.disabled=false;
+  saveConfig();
+}
+
+function getTime(){return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+
+function removeEmpty(){const e=document.getElementById('empty-state');if(e)e.remove()}
+
+function addUserMsg(text){
+  removeEmpty();
+  const msgs=document.getElementById('messages');
+  const row=document.createElement('div');
+  row.className='msg-row user';
+  row.innerHTML=`<div class="msg-gutter"><div class="msg-icon">👤</div><div class="msg-role">you</div></div>
+    <div class="msg-body">${renderMd(text)}<div class="msg-time">${getTime()}</div></div>`;
+  msgs.appendChild(row);msgs.scrollTop=msgs.scrollHeight;
+}
+
+function addTyping(){
+  removeEmpty();
+  const msgs=document.getElementById('messages');
+  const row=document.createElement('div');
+  row.className='msg-row ai';row.id='typing-row';
+  row.innerHTML=`<div class="msg-gutter"><div class="msg-icon">🤖</div><div class="msg-role">ai</div></div>
+    <div class="msg-body"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+  msgs.appendChild(row);msgs.scrollTop=msgs.scrollHeight;
+}
+
+function removeTyping(){const e=document.getElementById('typing-row');if(e)e.remove()}
+
+function createStreamRow(){
+  removeEmpty();removeTyping();
+  const msgs=document.getElementById('messages');
+  const row=document.createElement('div');
+  row.className='msg-row ai';row.id='stream-row';
+  row.innerHTML=`<div class="msg-gutter"><div class="msg-icon">🤖</div><div class="msg-role">ai</div></div>
+    <div class="msg-body" id="stream-body"><span class="cursor-block"></span></div>`;
+  msgs.appendChild(row);msgs.scrollTop=msgs.scrollHeight;
+  return document.getElementById('stream-body');
+}
+
+function finalizeStream(fullText){
+  const row=document.getElementById('stream-row');
+  if(row){row.removeAttribute('id')}
+  const body=document.getElementById('stream-body');
+  if(body){body.removeAttribute('id');body.innerHTML=renderMd(fullText)+`<div class="msg-time">${getTime()}</div>`}
+  document.getElementById('messages').scrollTop=99999;
+}
+
+function addSysMsg(text){
+  removeEmpty();
+  const msgs=document.getElementById('messages');
+  const row=document.createElement('div');
+  row.className='msg-row sys-msg';
+  row.innerHTML=`<div class="msg-gutter"><div class="msg-icon">⚠</div><div class="msg-role">sys</div></div>
+    <div class="msg-body" style="color:#ff8080;font-family:var(--mono);font-size:12px">${text}<div class="msg-time">${getTime()}</div></div>`;
+  msgs.appendChild(row);msgs.scrollTop=msgs.scrollHeight;
+}
+
+function resetStats(){
+  document.getElementById('stats-row').innerHTML=`<span class="stat" style="color:var(--text3)">awaiting first message</span>
+    <button class="clear-btn" onclick="clearChat()">[ clear ]</button>`;
+}
+
+function setStats(s){
+  document.getElementById('stats-row').innerHTML=`
+    <span class="stat">tok/s <span class="stat-val">${s.tokens_per_second?.toFixed(1)??'—'}</span></span>
+    <span class="stat">in <span class="stat-val">${s.input_tokens??'—'}</span></span>
+    <span class="stat">out <span class="stat-val">${s.total_output_tokens??'—'}</span></span>
+    <span class="stat">ttft <span class="stat-val">${s.time_to_first_token_seconds?.toFixed(2)??'—'}s</span></span>
+    <button class="clear-btn" onclick="clearChat()">[ clear ]</button>`;
+}
+
+function renderMd(text){
+  let s=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s=s.replace(/```[\w]*\n?([\s\S]*?)```/g,(_,c)=>`<pre><code>${c.trim()}</code></pre>`);
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/\*(.+?)\*/g,'<em>$1</em>');
+  s=s.replace(/\n/g,'<br>');
+  return s;
+}
+
+function extractChunk(evt){
+  // OpenAI-compat delta (most common in LM Studio)
+  if(evt.choices?.[0]?.delta?.content!==undefined)
+    return evt.choices[0].delta.content??'';
+  // LM Studio native output array
+  if(Array.isArray(evt.output)){
+    const m=evt.output.find(o=>o.type==='message');
+    if(m?.content) return m.content;
+  }
+  // Other fallbacks
+  if(typeof evt.delta?.content==='string') return evt.delta.content;
+  if(typeof evt.chunk==='string')          return evt.chunk;
+  if(typeof evt.content==='string')        return evt.content;
+  return '';
+}
+
+async function sendMessage(){
+  if(isLoading){
+    abortController?.abort();
+    return;
+  }
+  const input=document.getElementById('msg-input');
+  const text=input.value.trim();
+  if(!text)return;
+
+  const base=document.getElementById('base-url').value.trim().replace(/\/$/,'');
+  const model=document.getElementById('model-id').value.trim();
+
+  input.value='';input.style.height='auto';
+  isLoading=true;
+  toggleSendButton(true);
+  abortController=new AbortController();
+  saveConfig();
+
+  addUserMsg(text);
+  chatHistory.push({role:'user',content:text});
+  addTyping();
+
+  let sys=DEFAULT_SYSTEM_PROMPT;
+  if(chatHistory.length>1){
+    const prior=chatHistory.slice(0,-1)
+      .map(m=>`${m.role==='user'?'User':'Assistant'}: ${m.content}`)
+      .join('\n');
+    sys+=`\n\nConversation so far:\n${prior}`;
+  }
+
+  try{
+    const r=await fetch(`${base}/api/v1/chat`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      signal:abortController.signal,
+      body:JSON.stringify({
+        model,
+        input:text,
+        system_prompt:sys,
+        max_output_tokens:2048,
+        stream:true,
+        store:false
+      })
+    });
+
+    if(!r.ok){const e=await r.text();throw new Error(`HTTP ${r.status}: ${e}`)}
+
+    const streamBody=createStreamRow();
+    let fullText='';
+    const reader=r.body?.getReader?.();
+    if(!reader)throw new Error('response stream unavailable');
+    const decoder=new TextDecoder();
+    let buf='';
+
+    while(true){
+      const{done,value}=await reader.read();
+      if(done)break;
+      buf+=decoder.decode(value,{stream:true});
+      const lines=buf.split('\n');
+      buf=lines.pop();
+
+      for(const line of lines){
+        if(!line.startsWith('data:'))continue;
+        const raw=line.slice(5).trim();
+        if(!raw||raw==='[DONE]')continue;
+        let evt;
+        try{evt=JSON.parse(raw)}catch{continue}
+
+        const chunk=extractChunk(evt);
+        if(chunk){
+          fullText+=chunk;
+          streamBody.innerHTML=renderMd(fullText)+'<span class="cursor-block"></span>';
+          document.getElementById('messages').scrollTop=99999;
+        }
+        if(evt.stats)setStats(evt.stats);
+      }
+    }
+
+    if(!fullText)fullText='(no content — check LM Studio logs)';
+    finalizeStream(fullText);
+    chatHistory.push({role:'assistant',content:fullText});
+    setStatus('on');
+
+  }catch(e){
+    removeTyping();
+    const sr=document.getElementById('stream-row');if(sr)sr.remove();
+    if(e?.name==='AbortError'){
+      addSysMsg('generation stopped');
+      setStatus('');
+    }else{
+      addSysMsg(`error → ${e?.message??'unknown error'}`);
+      setStatus('err');
+    }
+  }
+
+  isLoading=false;
+  abortController=null;
+  toggleSendButton(false);
+  document.getElementById('msg-input').focus();
+}
+
+loadConfig();
+toggleSendButton(false);
+</script>
+</body>
+</html>
