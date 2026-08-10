@@ -1,0 +1,14 @@
+{
+  "name": "locallm-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Single-file HTML chat client for LM Studio's local OpenAI-compatible API. Zero runtime dependencies.",
+  "scripts": {
+    "validate": "html-validate index.html",
+    "check:js": "node scripts/check-inline-js.mjs",
+    "check": "npm run validate && npm run check:js"
+  },
+  "devDependencies": {
+    "html-validate": "^11.6.2"
+  }
+}
