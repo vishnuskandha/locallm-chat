@@ -1,5 +1,15 @@
 # locallm-chat — HTML chat UI for LM Studio
 
+
+<!-- README polish: repository metadata badges -->
+<p>
+  <a href="https://github.com/vishnuskandha/locallm-chat"><img alt="GitHub stars" src="https://img.shields.io/github/stars/vishnuskandha/locallm-chat?style=for-the-badge&logo=github&label=Stars"></a>
+  <a href="https://github.com/vishnuskandha/locallm-chat/fork"><img alt="GitHub forks" src="https://img.shields.io/github/forks/vishnuskandha/locallm-chat?style=for-the-badge&logo=github&label=Forks"></a>
+  <a href="https://github.com/vishnuskandha/locallm-chat/issues"><img alt="GitHub issues" src="https://img.shields.io/github/issues/vishnuskandha/locallm-chat?style=for-the-badge&logo=github&label=Issues"></a>
+  <a href="https://github.com/vishnuskandha/locallm-chat/commits"><img alt="Last commit" src="https://img.shields.io/github/last-commit/vishnuskandha/locallm-chat?style=for-the-badge&logo=git&label=Updated"></a>
+</p>
+<!-- End README polish -->
+
 [![CI](https://github.com/vishnuskandha/locallm-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/vishnuskandha/locallm-chat/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Runtime deps: zero](https://img.shields.io/badge/runtime%20deps-zero-brightgreen.svg)](index.html)
