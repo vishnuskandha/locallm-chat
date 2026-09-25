@@ -1,4 +1,8 @@
+<div align="center">
+
 # locallm-chat — HTML chat UI for LM Studio
+
+</div>
 
 
 <!-- README polish: repository metadata badges -->
